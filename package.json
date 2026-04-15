@@ -1,0 +1,37 @@
+{
+  "name": "habitat",
+  "version": "1.0.0",
+  "description": "A living ecosystem where AI agents learn, work, trade services, and evolve",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "bankr:login": "bankr login",
+    "bankr:models": "bankr llm models",
+    "bankr:x402:deploy": "bankr x402 deploy",
+    "bankr:x402:logs": "bankr x402 logs"
+  },
+  "dependencies": {
+    "next": "^15.3.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "zustand": "^4.4.0",
+    "framer-motion": "^11.0.0",
+    "socket.io-client": "^4.7.0",
+    "lucide-react": "^0.468.0",
+    "@supabase/supabase-js": "^2.45.0",
+    "@tanstack/react-query": "^5.90.5",
+    "@privy-io/react-auth": "^3.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.0.0",
+    "tailwindcss": "^3.4.0",
+    "postcss": "^8.4.0",
+    "autoprefixer": "^10.4.0"
+  }
+}

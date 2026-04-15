@@ -1,0 +1,474 @@
+'use client';
+
+import React, { useRef, useEffect, useState, useCallback } from 'react';
+import { useHabitatStore, useAllAgents, Agent, District } from '@/stores/habitatStore';
+import { FALLBACK_SPRITES, DISTRICT_COLORS, DISTRICT_ZONES } from '@/utils/spriteMap';
+import { 
+  TrendingUp, 
+  Code2, 
+  Shield, 
+  Microscope, 
+  Zap, 
+  Coins,
+  ZoomIn,
+  ZoomOut,
+  Map
+} from 'lucide-react';
+
+const TILE_SIZE = 32;
+const WORLD_WIDTH = 40;
+const WORLD_HEIGHT = 30;
+
+// District icons mapping
+const DISTRICT_ICONS: Record<District, React.FC<{ className?: string; style?: React.CSSProperties }>> = {
+  forecast: TrendingUp,
+  builder: Code2,
+  guardian: Shield,
+  research: Microscope,
+  service: Zap,
+  trade: Coins,
+};
+
+interface WorldCanvasProps {
+  onAgentClick?: (agent: Agent) => void;
+  onTileClick?: (x: number, y: number) => void;
+}
+
+export const WorldCanvas: React.FC<WorldCanvasProps> = ({ onAgentClick, onTileClick }) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [hoveredAgent, setHoveredAgent] = useState<Agent | null>(null);
+  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+  const [animFrame, setAnimFrame] = useState(0);
+  
+  const agents = useAllAgents();
+  const { camera, setCameraPosition, setCameraZoom, selectAgent, setCurrentView, setPanelTab } = useHabitatStore();
+
+  // Animation frame counter
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setAnimFrame(prev => (prev + 1) % 60);
+    }, 100);
+    return () => clearInterval(interval);
+  }, []);
+
+  const getDistrictAt = useCallback((x: number, y: number): District | null => {
+    for (const [district, zone] of Object.entries(DISTRICT_ZONES)) {
+      if (x >= zone.x && x < zone.x + zone.width && y >= zone.y && y < zone.y + zone.height) {
+        return district as District;
+      }
+    }
+    return null;
+  }, []);
+
+  const draw = useCallback(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!canvas || !ctx) return;
+
+    const width = canvas.width;
+    const height = canvas.height;
+
+    // Clear with dark background
+    ctx.fillStyle = '#0a0a0f';
+    ctx.fillRect(0, 0, width, height);
+
+    const startX = Math.floor(camera.x / TILE_SIZE);
+    const startY = Math.floor(camera.y / TILE_SIZE);
+    const endX = Math.ceil((camera.x + width / camera.zoom) / TILE_SIZE);
+    const endY = Math.ceil((camera.y + height / camera.zoom) / TILE_SIZE);
+
+    ctx.save();
+    ctx.scale(camera.zoom, camera.zoom);
+    ctx.translate(-camera.x, -camera.y);
+
+    // Draw grid and districts with gradient effect
+    for (let y = Math.max(0, startY); y < Math.min(WORLD_HEIGHT, endY); y++) {
+      for (let x = Math.max(0, startX); x < Math.min(WORLD_WIDTH, endX); x++) {
+        const district = getDistrictAt(x, y);
+        const color = district ? DISTRICT_COLORS[district] : '#1a1a2e';
+        
+        // Animated pulse based on position
+        const pulse = Math.sin((animFrame + x + y) * 0.1) * 0.5 + 0.5;
+        const alpha = Math.round(15 + pulse * 5).toString(16).padStart(2, '0');
+        
+        ctx.fillStyle = color + alpha;
+        ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+        
+        // Grid lines
+        ctx.strokeStyle = color + '25';
+        ctx.lineWidth = 0.5;
+        ctx.strokeRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+        
+        // District borders with glow
+        if (district) {
+          const zone = DISTRICT_ZONES[district];
+          if (x === zone.x || x === zone.x + zone.width - 1 ||
+              y === zone.y || y === zone.y + zone.height - 1) {
+            ctx.strokeStyle = color + '80';
+            ctx.lineWidth = 2;
+            ctx.shadowColor = color;
+            ctx.shadowBlur = 5;
+            ctx.strokeRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+            ctx.shadowBlur = 0;
+          }
+        }
+      }
+    }
+
+    // Draw district labels with better styling
+    ctx.font = 'bold 12px "Press Start 2P", monospace';
+    for (const [district, zone] of Object.entries(DISTRICT_ZONES)) {
+      const centerX = (zone.x + zone.width / 2) * TILE_SIZE;
+      const centerY = zone.y * TILE_SIZE + 40;
+      const color = DISTRICT_COLORS[district];
+      
+      // Glow effect
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 15;
+      ctx.fillStyle = color + 'A0';
+      ctx.textAlign = 'center';
+      ctx.fillText(district.toUpperCase(), centerX, centerY);
+      ctx.shadowBlur = 0;
+    }
+
+    // Draw connection lines with animation
+    const lineOffset = animFrame * 2;
+    for (const agent of agents) {
+      for (const connId of agent.connections) {
+        const connAgent = agents.find(a => a.id === connId);
+        if (connAgent) {
+          const ax = agent.position.x * TILE_SIZE + TILE_SIZE / 2;
+          const ay = agent.position.y * TILE_SIZE + TILE_SIZE / 2;
+          const bx = connAgent.position.x * TILE_SIZE + TILE_SIZE / 2;
+          const by = connAgent.position.y * TILE_SIZE + TILE_SIZE / 2;
+          
+          // Animated dashed line
+          ctx.strokeStyle = '#39FF1440';
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([5, 5]);
+          ctx.lineDashOffset = -lineOffset;
+          
+          ctx.beginPath();
+          ctx.moveTo(ax, ay);
+          ctx.lineTo(bx, by);
+          ctx.stroke();
+          
+          // Draw a traveling dot
+          const progress = (animFrame % 30) / 30;
+          const dotX = ax + (bx - ax) * progress;
+          const dotY = ay + (by - ay) * progress;
+          
+          ctx.fillStyle = '#39FF14';
+          ctx.beginPath();
+          ctx.arc(dotX, dotY, 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+    ctx.setLineDash([]);
+
+    // Draw agents with enhanced visuals
+    for (const agent of agents) {
+      const ax = agent.position.x * TILE_SIZE;
+      const ay = agent.position.y * TILE_SIZE;
+      const district = agent.district;
+      const color = DISTRICT_COLORS[district];
+      const isHovered = hoveredAgent?.id === agent.id;
+      
+      // Pulsing glow for active agents
+      if (agent.status === 'online') {
+        const glowPulse = Math.sin(animFrame * 0.15) * 0.3 + 0.7;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 10 + glowPulse * 5;
+      }
+
+      // Agent background
+      ctx.fillStyle = color + (isHovered ? '60' : '40');
+      ctx.beginPath();
+      ctx.roundRect(ax + 2, ay + 2, TILE_SIZE - 4, TILE_SIZE - 4, 6);
+      ctx.fill();
+
+      // Agent border
+      ctx.strokeStyle = isHovered ? '#fff' : color;
+      ctx.lineWidth = isHovered ? 2 : 1.5;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // Agent emoji/icon
+      ctx.font = '16px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const roleKey = agent.role.split('_')[0] as keyof typeof FALLBACK_SPRITES;
+      ctx.fillText(
+        FALLBACK_SPRITES[roleKey] || '🤖',
+        ax + TILE_SIZE / 2,
+        ay + TILE_SIZE / 2
+      );
+
+      // Status indicator with pulse
+      const statusColor = agent.status === 'online' ? '#39FF14' : 
+                          agent.status === 'busy' ? '#FF6B35' : '#666';
+      const statusPulse = agent.status === 'online' ? Math.sin(animFrame * 0.2) * 2 + 4 : 4;
+      
+      ctx.fillStyle = statusColor;
+      ctx.shadowColor = statusColor;
+      ctx.shadowBlur = agent.status === 'online' ? 8 : 0;
+      ctx.beginPath();
+      ctx.arc(ax + TILE_SIZE - 6, ay + 6, statusPulse, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // Level badge
+      if (agent.level > 1) {
+        ctx.fillStyle = '#000000AA';
+        ctx.beginPath();
+        ctx.roundRect(ax + 2, ay + TILE_SIZE - 10, 14, 10, 2);
+        ctx.fill();
+        ctx.font = '7px monospace';
+        ctx.fillStyle = color;
+        ctx.textAlign = 'left';
+        ctx.fillText(`L${agent.level}`, ax + 4, ay + TILE_SIZE - 3);
+      }
+    }
+
+    ctx.restore();
+  }, [camera, agents, getDistrictAt, animFrame, hoveredAgent]);
+
+  useEffect(() => {
+    let animationId: number;
+    const animate = () => {
+      draw();
+      animationId = requestAnimationFrame(animate);
+    };
+    animate();
+    return () => cancelAnimationFrame(animationId);
+  }, [draw]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      const canvas = canvasRef.current;
+      const container = containerRef.current;
+      if (!canvas || !container) return;
+      canvas.width = container.clientWidth;
+      canvas.height = container.clientHeight;
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setIsDragging(true);
+    setDragStart({ x: e.clientX + camera.x, y: e.clientY + camera.y });
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = (e.clientX - rect.left) / camera.zoom + camera.x;
+    const mouseY = (e.clientY - rect.top) / camera.zoom + camera.y;
+    const tileX = Math.floor(mouseX / TILE_SIZE);
+    const tileY = Math.floor(mouseY / TILE_SIZE);
+
+    const agent = agents.find(a => a.position.x === tileX && a.position.y === tileY);
+    
+    if (agent) {
+      setHoveredAgent(agent);
+      setTooltipPos({ x: e.clientX + 10, y: e.clientY + 10 });
+    } else {
+      setHoveredAgent(null);
+    }
+
+    if (isDragging) {
+      const newX = dragStart.x - e.clientX;
+      const newY = dragStart.y - e.clientY;
+      const maxX = WORLD_WIDTH * TILE_SIZE - canvas.width / camera.zoom;
+      const maxY = WORLD_HEIGHT * TILE_SIZE - canvas.height / camera.zoom;
+      setCameraPosition(
+        Math.max(0, Math.min(maxX, newX)),
+        Math.max(0, Math.min(maxY, newY))
+      );
+    }
+  };
+
+  const handleMouseUp = () => setIsDragging(false);
+
+  const handleClick = (e: React.MouseEvent) => {
+    if (isDragging) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = (e.clientX - rect.left) / camera.zoom + camera.x;
+    const mouseY = (e.clientY - rect.top) / camera.zoom + camera.y;
+    const tileX = Math.floor(mouseX / TILE_SIZE);
+    const tileY = Math.floor(mouseY / TILE_SIZE);
+
+    const agent = agents.find(a => a.position.x === tileX && a.position.y === tileY);
+    
+    if (agent) {
+      selectAgent(agent.id);
+      setCurrentView('panel');
+      setPanelTab('overview');
+      onAgentClick?.(agent);
+    } else {
+      onTileClick?.(tileX, tileY);
+    }
+  };
+
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -0.1 : 0.1;
+    setCameraZoom(camera.zoom + delta);
+  };
+
+  return (
+    <div 
+      ref={containerRef}
+      className="relative w-full h-full overflow-hidden bg-habitat-darker"
+      style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+    >
+      <canvas
+        ref={canvasRef}
+        className="w-full h-full pixel-perfect"
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        onClick={handleClick}
+        onWheel={handleWheel}
+      />
+      
+      {/* Mini map */}
+      <div className="absolute bottom-4 right-4 w-44 h-32 bg-habitat-dark/90 border border-white/10 rounded-lg overflow-hidden backdrop-blur-sm">
+        <div className="flex items-center gap-1 px-2 py-1 border-b border-white/5">
+          <Map className="w-3 h-3 text-white/40" />
+          <span className="text-[8px] text-white/40 uppercase tracking-wider">World Map</span>
+        </div>
+        <div className="relative w-full h-[calc(100%-24px)] p-1">
+          {Object.entries(DISTRICT_ZONES).map(([district, zone]) => (
+            <div
+              key={district}
+              className="absolute transition-opacity hover:opacity-100"
+              style={{
+                left: `${(zone.x / WORLD_WIDTH) * 100}%`,
+                top: `${(zone.y / WORLD_HEIGHT) * 100}%`,
+                width: `${(zone.width / WORLD_WIDTH) * 100}%`,
+                height: `${(zone.height / WORLD_HEIGHT) * 100}%`,
+                backgroundColor: DISTRICT_COLORS[district as District] + '30',
+                border: `1px solid ${DISTRICT_COLORS[district as District]}50`,
+              }}
+            />
+          ))}
+          {agents.map(agent => (
+            <div
+              key={agent.id}
+              className="absolute w-2 h-2 rounded-full animate-pulse"
+              style={{
+                left: `${(agent.position.x / WORLD_WIDTH) * 100}%`,
+                top: `${(agent.position.y / WORLD_HEIGHT) * 100}%`,
+                backgroundColor: DISTRICT_COLORS[agent.district],
+                boxShadow: `0 0 4px ${DISTRICT_COLORS[agent.district]}`,
+              }}
+            />
+          ))}
+          {/* Camera viewport indicator */}
+          <div
+            className="absolute border border-white/50 bg-white/5"
+            style={{
+              left: `${(camera.x / (WORLD_WIDTH * TILE_SIZE)) * 100}%`,
+              top: `${(camera.y / (WORLD_HEIGHT * TILE_SIZE)) * 100}%`,
+              width: `${(1 / camera.zoom) * 25}%`,
+              height: `${(1 / camera.zoom) * 25}%`,
+            }}
+          />
+        </div>
+      </div>
+
+      {/* Zoom controls */}
+      <div className="absolute bottom-4 left-4 flex flex-col gap-2">
+        <button
+          onClick={() => setCameraZoom(camera.zoom + 0.2)}
+          className="w-9 h-9 bg-habitat-dark/90 border border-white/10 rounded-lg text-white/70 hover:text-white hover:border-habitat-green transition-all flex items-center justify-center backdrop-blur-sm"
+        >
+          <ZoomIn className="w-4 h-4" />
+        </button>
+        <button
+          onClick={() => setCameraZoom(camera.zoom - 0.2)}
+          className="w-9 h-9 bg-habitat-dark/90 border border-white/10 rounded-lg text-white/70 hover:text-white hover:border-habitat-green transition-all flex items-center justify-center backdrop-blur-sm"
+        >
+          <ZoomOut className="w-4 h-4" />
+        </button>
+        <div className="text-[9px] text-white/30 text-center">
+          {Math.round(camera.zoom * 100)}%
+        </div>
+      </div>
+
+      {/* Legend */}
+      <div className="absolute top-4 left-4 bg-habitat-dark/90 border border-white/10 rounded-lg p-3 backdrop-blur-sm">
+        <div className="text-[9px] text-white/50 mb-2 uppercase tracking-wider">Districts</div>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+          {Object.entries(DISTRICT_COLORS).map(([district, color]) => {
+            const Icon = DISTRICT_ICONS[district as District];
+            return (
+              <div key={district} className="flex items-center gap-2">
+                <div className="w-4 h-4 rounded flex items-center justify-center" style={{ backgroundColor: color + '30' }}>
+                  <Icon className="w-2.5 h-2.5" style={{ color }} />
+                </div>
+                <span className="text-[10px] text-white/70 capitalize">{district}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Agent tooltip */}
+      {hoveredAgent && (
+        <div 
+          className="fixed z-50 bg-habitat-darker/95 border border-white/10 rounded-lg p-3 shadow-xl backdrop-blur-sm min-w-[180px]"
+          style={{ left: tooltipPos.x, top: tooltipPos.y }}
+        >
+          <div className="flex items-center gap-2 mb-2">
+            <div 
+              className="w-10 h-10 rounded-lg flex items-center justify-center text-xl"
+              style={{ backgroundColor: DISTRICT_COLORS[hoveredAgent.district] + '30' }}
+            >
+              {FALLBACK_SPRITES[hoveredAgent.role.split('_')[0] as keyof typeof FALLBACK_SPRITES] || '🤖'}
+            </div>
+            <div>
+              <div className="font-pixel text-xs" style={{ color: DISTRICT_COLORS[hoveredAgent.district] }}>
+                {hoveredAgent.name}
+              </div>
+              <div className="text-[10px] text-white/50">
+                {hoveredAgent.role.replace('_', ' ')}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 text-[10px] text-white/60 mb-2">
+            <span className="flex items-center gap-1">
+              <span className="text-habitat-purple">Lv</span> {hoveredAgent.level}
+            </span>
+            <span className="text-habitat-green">${hoveredAgent.revenue}</span>
+            <span className={`flex items-center gap-1 ${
+              hoveredAgent.status === 'online' ? 'text-habitat-green' :
+              hoveredAgent.status === 'busy' ? 'text-habitat-orange' : 'text-white/30'
+            }`}>
+              <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
+              {hoveredAgent.status}
+            </span>
+          </div>
+          <div className="text-[9px] text-habitat-cyan flex items-center gap-1">
+            Click to view agent panel →
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default WorldCanvas;

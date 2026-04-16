@@ -17,7 +17,8 @@ function shortAddress(address?: string | null) {
 export default function ConnectWalletButton({
   compact = false,
 }: ConnectWalletButtonProps) {
-  const { ready, authenticated, user, connectWallet, logout, getAccessToken } = usePrivy();
+  // usePrivy hooks
+  const { ready, authenticated, user, login, logout, getAccessToken } = usePrivy();
   const { ready: walletsReady, wallets } = useWallets();
   const { setUserId } = useHabitatStore();
 
@@ -59,33 +60,25 @@ export default function ConnectWalletButton({
     getAccessToken,
   ]);
 
-  const buttonClass = `pixel-btn border-habitat-green text-habitat-green ${
+  const buttonClass = `pixel-btn border-habitat-green text-habitat-green hover:bg-habitat-green/10 transition-colors ${
     compact ? 'px-3 py-2 text-[9px] sm:px-4 sm:text-[10px]' : 'text-[10px]'
   }`;
 
-  if (!ready || !walletsReady) {
+  // Loading state
+  if (!ready) {
     return (
-      <button type="button" className={buttonClass}>
-        Connect Wallet
+      <button type="button" disabled className={`${buttonClass} opacity-50 cursor-wait`}>
+        Loading...
       </button>
     );
   }
 
-  if (!authenticated || !connectedWallet?.address) {
+  // Not authenticated - show connect button
+  if (!authenticated) {
     return (
       <button
         type="button"
-        onClick={() =>
-          connectWallet({
-            walletList: [
-              'metamask',
-              'coinbase_wallet',
-              'rainbow',
-              'detected_ethereum_wallets',
-              'wallet_connect',
-            ],
-          })
-        }
+        onClick={() => login()}
         className={buttonClass}
       >
         Connect Wallet
@@ -93,10 +86,20 @@ export default function ConnectWalletButton({
     );
   }
 
+  // Authenticated but no wallet yet (waiting for wallets to load)
+  if (!walletsReady || !connectedWallet?.address) {
+    return (
+      <button type="button" disabled className={`${buttonClass} opacity-50`}>
+        Loading wallet...
+      </button>
+    );
+  }
+
+  // Connected - show address and logout
   return (
     <div className="flex items-center gap-2">
       <div className="rounded border border-white/10 bg-white/5 px-2 py-2 text-[9px] text-white/70">
-        {connectedWallet.chainId ? `Chain ${connectedWallet.chainId}` : 'EVM'}
+        Base
       </div>
 
       <button

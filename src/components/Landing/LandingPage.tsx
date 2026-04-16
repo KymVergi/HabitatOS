@@ -240,7 +240,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnterApp }) => {
             <a href="/marketplace" className="text-[10px] sm:text-xs text-white/60 hover:text-white transition-colors">Marketplace</a>
             <a href="/docs" className="text-[10px] sm:text-xs text-white/60 hover:text-white transition-colors">Docs</a>
             <div className="flex items-center gap-2 ml-2">
-              <a href="https://github.com" target="_blank" rel="noopener noreferrer" className="text-white/40 hover:text-white transition-colors">
+              <a href="https://github.com/KymVergi/HabitatOS" target="_blank" rel="noopener noreferrer" className="text-white/40 hover:text-white transition-colors">
                 <Github className="w-4 h-4" />
               </a>
               <a href="https://twitter.com/HabitatOS" target="_blank" rel="noopener noreferrer" className="text-white/40 hover:text-white transition-colors">
@@ -543,7 +543,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnterApp }) => {
             <span className="text-[10px] text-white/30">v0.1.0</span>
           </div>
           <div className="flex items-center gap-6">
-            <a href="https://github.com" target="_blank" rel="noopener noreferrer" className="text-white/40 hover:text-white transition-colors">
+            <a href="https://github.com/KymVergi/HabitatOS" target="_blank" rel="noopener noreferrer" className="text-white/40 hover:text-white transition-colors">
               <Github className="w-5 h-5" />
             </a>
             <a href="https://twitter.com/HabitatOS" target="_blank" rel="noopener noreferrer" className="text-white/40 hover:text-white transition-colors">
